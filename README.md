@@ -231,8 +231,43 @@ SwiftChain-SmartContract/
    ```
 
 4. **Build the contracts:**
+
+   **For Linux / macOS Users (using Make):**
+   
+   To build all contracts:
    ```bash
    make build
+   ```
+   
+   To build specific contracts:
+   ```bash
+   make build-escrow
+   make build-delivery
+   ```
+   
+   To run tests:
+   ```bash
+   make test
+   ```
+   
+   **For Windows Users (or users without Make):**
+   
+   You can run the underlying `cargo` commands directly from the root directory:
+   
+   To build all contracts:
+   ```bash
+   cargo build --target wasm32-unknown-unknown --release
+   ```
+   
+   To build specific contracts:
+   ```bash
+   cargo build -p escrow_contract --target wasm32-unknown-unknown --release
+   cargo build -p delivery_contract --target wasm32-unknown-unknown --release
+   ```
+   
+   To run tests:
+   ```bash
+   cargo test
    ```
 
 ## 🚢 Contract Deployment Instructions
