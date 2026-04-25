@@ -1,7 +1,12 @@
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, contracttype, contracterror, Env, Symbol, Address, panic_with_error};
-use shared_types::DeliveryStatus;
+use soroban_sdk::{contract, contractimpl, contracttype, contracterror, Env, Symbol, Address, panic_with_error, token};
+use shared_types::{DeliveryStatus, events};
+
+mod constants {
+    pub const ESCROW_TTL_THRESHOLD: u32 = 17280; // ~1 day in ledgers (assuming 5s)
+    pub const ESCROW_TTL_EXTEND_TO: u32 = 518400; // ~30 days
+}
 
 #[contracttype]
 #[derive(Clone)]
@@ -9,6 +14,7 @@ enum DataKey {
     Admin,
     PlatformFeeBps,
     Amount,
+    Escrow(u64),
 }
 
 #[contracterror]
@@ -23,6 +29,32 @@ pub enum EscrowError {
 pub struct FeeUpdated {
     pub old_fee: u32,
     pub new_fee: u32,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EscrowState {
+    Pending,
+    Released,
+    Refunded,
+    Paused,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EscrowRecord {
+    pub sender: Address,
+    pub driver: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub status: EscrowState,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DisputeFavour {
+    Sender,
+    Driver,
 }
 
 #[contract]
@@ -171,7 +203,7 @@ impl EscrowContract {
                 driver,
                 token,
                 amount,
-                status: EscrowStatus::Pending,
+                status: EscrowState::Pending,
             },
         );
         env.events().publish(
@@ -184,7 +216,7 @@ impl EscrowContract {
         caller.require_auth();
         require_admin(&env, &caller);
         let mut record = load_escrow(&env, delivery_id);
-        if record.status != EscrowStatus::Pending {
+        if record.status != EscrowState::Pending {
             panic!("escrow is not in pending state");
         }
         token::Client::new(&env, &record.token).transfer(
@@ -192,7 +224,7 @@ impl EscrowContract {
             &record.driver,
             &record.amount,
         );
-        record.status = EscrowStatus::Released;
+        record.status = EscrowState::Released;
         save_escrow(&env, delivery_id, &record);
         env.events().publish(
             (events::escrow_released(&env), delivery_id),
@@ -204,7 +236,7 @@ impl EscrowContract {
         caller.require_auth();
         require_admin(&env, &caller);
         let mut record = load_escrow(&env, delivery_id);
-        if record.status != EscrowStatus::Pending {
+        if record.status != EscrowState::Pending {
             panic!("escrow is not in pending state");
         }
         token::Client::new(&env, &record.token).transfer(
@@ -212,7 +244,7 @@ impl EscrowContract {
             &record.sender,
             &record.amount,
         );
-        record.status = EscrowStatus::Refunded;
+        record.status = EscrowState::Refunded;
         save_escrow(&env, delivery_id, &record);
         env.events().publish(
             (events::escrow_refunded(&env), delivery_id),
@@ -226,10 +258,10 @@ impl EscrowContract {
         if caller != record.sender {
             panic!("only the escrow sender can raise a dispute");
         }
-        if record.status != EscrowStatus::Pending {
+        if record.status != EscrowState::Pending {
             panic!("escrow is not in pending state");
         }
-        record.status = EscrowStatus::Disputed;
+        record.status = EscrowState::Paused;
         save_escrow(&env, delivery_id, &record);
         let timestamp = env.ledger().timestamp();
         env.events().publish(
@@ -240,40 +272,80 @@ impl EscrowContract {
 
     pub fn resolve_dispute(
         env: Env,
-        caller: Address,
+        admin: Address,
         delivery_id: u64,
-        release_to_driver: bool,
+        favour: DisputeFavour,
     ) {
-        caller.require_auth();
-        require_admin(&env, &caller);
+        admin.require_auth();
+        
+        let stored_admin: Address = env.storage().instance().get(&DataKey::Admin).expect("Not initialized");
+        if admin != stored_admin {
+            panic!("Unauthorized");
+        }
+
         let mut record = load_escrow(&env, delivery_id);
-        if record.status != EscrowStatus::Disputed {
-            panic!("escrow is not in disputed state");
+        if record.status != EscrowState::Paused {
+            panic!("escrow is not in paused state");
         }
-        if release_to_driver {
-            token::Client::new(&env, &record.token).transfer(
-                &env.current_contract_address(),
-                &record.driver,
-                &record.amount,
-            );
-            record.status = EscrowStatus::Released;
-        } else {
-            token::Client::new(&env, &record.token).transfer(
-                &env.current_contract_address(),
-                &record.sender,
-                &record.amount,
-            );
-            record.status = EscrowStatus::Refunded;
+
+        match favour {
+            DisputeFavour::Sender => {
+                token::Client::new(&env, &record.token).transfer(
+                    &env.current_contract_address(),
+                    &record.sender,
+                    &record.amount,
+                );
+                record.status = EscrowState::Refunded;
+            },
+            DisputeFavour::Driver => {
+                let fee_bps: u32 = env.storage().instance().get(&DataKey::PlatformFeeBps).unwrap_or(0);
+                let fee_amount = (record.amount * fee_bps as i128) / 10000;
+                let release_amount = record.amount - fee_amount;
+
+                token::Client::new(&env, &record.token).transfer(
+                    &env.current_contract_address(),
+                    &record.driver,
+                    &release_amount,
+                );
+                
+                record.status = EscrowState::Released;
+            }
         }
+
         save_escrow(&env, delivery_id, &record);
+        
         env.events().publish(
             (events::dispute_resolved(&env), delivery_id),
-            (release_to_driver, caller),
+            (favour, admin),
         );
     }
 
     pub fn get_escrow_record(env: Env, delivery_id: u64) -> EscrowRecord {
         load_escrow(&env, delivery_id)
+    }
+}
+
+fn load_escrow(env: &Env, delivery_id: u64) -> EscrowRecord {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Escrow(delivery_id))
+        .expect("Escrow not found")
+}
+
+fn save_escrow(env: &Env, delivery_id: u64, record: &EscrowRecord) {
+    let key = DataKey::Escrow(delivery_id);
+    env.storage().persistent().set(&key, record);
+    env.storage().persistent().extend_ttl(
+        &key,
+        constants::ESCROW_TTL_THRESHOLD,
+        constants::ESCROW_TTL_EXTEND_TO,
+    );
+}
+
+fn require_admin(env: &Env, caller: &Address) {
+    let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+    if *caller != admin {
+        panic!("Unauthorized");
     }
 }
 
