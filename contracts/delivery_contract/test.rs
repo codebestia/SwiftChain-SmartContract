@@ -4,6 +4,20 @@ extern crate std;
 use super::*;
 use soroban_sdk::{testutils::{Address as _, Events}, Address, Env, Symbol, TryFromVal};
 
+// --- Escrow Mock ---
+#[contract]
+pub struct MockEscrow;
+
+#[contractimpl]
+impl MockEscrow {
+    pub fn refund_escrow(_env: Env, delivery_id: DeliveryId) {
+        // We can simulate failure if delivery_id is a specific value
+        if delivery_id == 999 {
+            panic!("Escrow failure simulated");
+        }
+    }
+}
+
 fn setup_test() -> (Env, DeliveryContractClient<'static>, Address, Address, Address) {
     let env = Env::default();
     env.mock_all_auths();
@@ -15,7 +29,8 @@ fn setup_test() -> (Env, DeliveryContractClient<'static>, Address, Address, Addr
     let driver = Address::generate(&env);
     let unauthorized = Address::generate(&env);
 
-    client.init_admin(&admin);
+    let escrow_id = env.register(MockEscrow, ());
+    client.init(&admin, &escrow_id);
 
     (env, client, admin, driver, unauthorized)
 }
@@ -29,6 +44,7 @@ fn test_successful_assignment_by_admin() {
     let delivery_id = client.create_delivery(&sender, &metadata);
 
     client.assign_driver(&admin, &delivery_id, &driver);
+    
 
     // Verify events
     let events = env.events().all();
@@ -109,25 +125,9 @@ fn test_assignment_when_status_not_pending() {
     client.assign_driver(&admin, &delivery_id, &another_driver);
 }
 
-// --- Escrow Mock ---
-#[contract]
-pub struct MockEscrow;
-
-#[contractimpl]
-impl MockEscrow {
-    pub fn refund_escrow(_env: Env, delivery_id: DeliveryId) {
-        // We can simulate failure if delivery_id is a specific value
-        if delivery_id == 999 {
-            panic!("Escrow failure simulated");
-        }
-    }
-}
-
 #[test]
 fn test_cancel_delivery_pending() {
     let (env, client, admin, _, _) = setup_test();
-    let escrow_id = env.register(MockEscrow, ());
-    client.set_escrow_contract(&admin, &escrow_id);
     let sender = Address::generate(&env);
     let recipient = Address::generate(&env);
     let metadata = DeliveryMetadata { recipient: recipient.clone() };
@@ -149,8 +149,6 @@ fn test_cancel_delivery_pending() {
 #[test]
 fn test_cancel_delivery_active() {
     let (env, client, admin, driver, _) = setup_test();
-    let escrow_id = env.register(MockEscrow, ());
-    client.set_escrow_contract(&admin, &escrow_id);
     let sender = Address::generate(&env);
     let recipient = Address::generate(&env);
     let metadata = DeliveryMetadata { recipient: recipient.clone() };
@@ -174,8 +172,6 @@ fn test_cancel_delivery_active() {
 #[should_panic(expected = "NotAuthorized")]
 fn test_cancel_delivery_unauthorized() {
     let (env, client, admin, _, unauthorized) = setup_test();
-    let escrow_id = env.register(MockEscrow, ());
-    client.set_escrow_contract(&admin, &escrow_id);
     let sender = Address::generate(&env);
     let recipient = Address::generate(&env);
     let metadata = DeliveryMetadata { recipient: recipient.clone() };
@@ -188,8 +184,6 @@ fn test_cancel_delivery_unauthorized() {
 #[should_panic(expected = "InvalidState")]
 fn test_cancel_delivery_invalid_state() {
     let (env, client, admin, _, _) = setup_test();
-    let escrow_id = env.register(MockEscrow, ());
-    client.set_escrow_contract(&admin, &escrow_id);
     let sender = Address::generate(&env);
     let recipient = Address::generate(&env);
     let metadata = DeliveryMetadata { recipient: recipient.clone() };
@@ -205,8 +199,6 @@ fn test_cancel_delivery_invalid_state() {
 #[should_panic(expected = "Escrow failure simulated")]
 fn test_cancel_delivery_escrow_failure() {
     let (env, client, admin, _, _) = setup_test();
-    let escrow_id = env.register(MockEscrow, ());
-    client.set_escrow_contract(&admin, &escrow_id);
     let sender = Address::generate(&env);
     let recipient = Address::generate(&env);
     let metadata = DeliveryMetadata { recipient: recipient.clone() };
@@ -266,4 +258,44 @@ fn test_create_delivery_incrementing_ids_and_persistence() {
     assert_eq!(id1, 1);
     assert_eq!(id2, 2);
     assert_eq!(id3, 3);
+}
+
+#[test]
+#[should_panic(expected = "AlreadyInitialized")]
+fn test_double_init() {
+    let (env, client, admin, _, _) = setup_test();
+    let escrow = Address::generate(&env);
+    client.init(&admin, &escrow);
+}
+
+#[test]
+fn test_init_state_and_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(DeliveryContract, ());
+    let client = DeliveryContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let escrow = Address::generate(&env);
+
+    client.init(&admin, &escrow);
+
+    // Verify counter initialized
+    let counter: u64 = env.as_contract(&contract_id, || {
+        env.storage().persistent().get(&DataKey::DeliveryCounter).unwrap()
+    });
+    assert_eq!(counter, 0);
+
+    // Verify event
+    let events = env.events().all();
+    let last_event = events.last().unwrap();
+    
+    assert_eq!(last_event.0, contract_id);
+
+    let topic0: Symbol = Symbol::try_from_val(&env, &last_event.1.get(0).unwrap()).unwrap();
+    assert_eq!(topic0, Symbol::new(&env, "DeliveryContractInitialized"));
+
+    let data: (Address, Address) = <(Address, Address)>::try_from_val(&env, &last_event.2).unwrap();
+    assert_eq!(data, (admin, escrow));
 }
