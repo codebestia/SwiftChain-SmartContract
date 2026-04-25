@@ -68,6 +68,7 @@ fn test_update_platform_fee_success() {
 
 #[test]
 #[should_panic(expected = "Unauthorized")]
+
 fn test_update_platform_fee_unauthorized() {
     let env = Env::default();
     let contract_id = env.register_contract(None, EscrowContract);

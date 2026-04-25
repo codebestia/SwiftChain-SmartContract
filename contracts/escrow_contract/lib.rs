@@ -31,6 +31,7 @@ pub struct FeeUpdated {
 pub struct EscrowContract;
 
 #[contractimpl]
+
 impl EscrowContract {
     /// Initialize the escrow with an admin and amount
     pub fn init(env: Env, admin: Address, amount: i128) {
