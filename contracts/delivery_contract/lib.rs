@@ -48,19 +48,18 @@ pub struct DeliveryContract;
 
 #[contractimpl]
 impl DeliveryContract {
-    pub fn init_admin(env: Env, admin: Address) {
+    pub fn init(env: Env, admin: Address, escrow_contract: Address) {
         if env.storage().instance().has(&DataKey::Admin) {
-            panic!("already initialized");
+            panic!("AlreadyInitialized");
         }
         env.storage().instance().set(&DataKey::Admin, &admin);
-    }
+        env.storage().instance().set(&DataKey::EscrowContract, &escrow_contract);
+        env.storage().persistent().set(&DataKey::DeliveryCounter, &0u64);
 
-    pub fn set_escrow_contract(env: Env, admin: Address, escrow: Address) {
-        admin.require_auth();
-        if !Self::is_admin(&env, &admin) {
-            panic!("NotAuthorized");
-        }
-        env.storage().instance().set(&DataKey::EscrowContract, &escrow);
+        env.events().publish(
+            (Symbol::new(&env, "DeliveryContractInitialized"),),
+            (admin, escrow_contract),
+        );
     }
 
     pub fn create_delivery(env: Env, sender: Address, metadata: DeliveryMetadata) -> DeliveryId {
