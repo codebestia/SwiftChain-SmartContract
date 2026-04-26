@@ -22,6 +22,7 @@ enum DataKey {
 #[repr(u32)]
 pub enum EscrowError {
     InvalidState = 1,
+    DeliveryNotFound = 2,
 }
 
 #[contracttype]
@@ -61,6 +62,7 @@ pub enum DisputeFavour {
 pub struct EscrowContract;
 
 #[contractimpl]
+
 impl EscrowContract {
     /// Initialize the escrow with an admin and amount
     pub fn init(env: Env, admin: Address, amount: i128) {
@@ -320,7 +322,10 @@ impl EscrowContract {
         );
     }
 
-    pub fn get_escrow_record(env: Env, delivery_id: u64) -> EscrowRecord {
+    pub fn get_escrow(env: Env, delivery_id: u64) -> EscrowRecord {
+        if !env.storage().persistent().has(&DataKey::Escrow(delivery_id)) {
+            panic_with_error!(&env, EscrowError::DeliveryNotFound);
+        }
         load_escrow(&env, delivery_id)
     }
 }

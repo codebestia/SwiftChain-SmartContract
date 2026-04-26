@@ -65,6 +65,7 @@ fn test_update_platform_fee_success() {
 
 #[test]
 #[should_panic(expected = "Unauthorized")]
+
 fn test_update_platform_fee_unauthorized() {
     let env = Env::default();
     let contract_id = env.register_contract(None, EscrowContract);
@@ -231,14 +232,14 @@ fn test_happy_path_create_and_release() {
     assert_eq!(balance(&env, &token_addr, &sender), 0);
     assert_eq!(balance(&env, &token_addr, &contract_id), 1000);
 
-    let record = client.get_escrow_record(&1u64);
-    assert_eq!(record.status, EscrowState::Pending);
+    let record = client.get_escrow(&1u64);
+    assert_eq!(record.status, EscrowStatus::Pending);
 
     client.release_escrow(&admin, &1u64);
 
     assert_eq!(balance(&env, &token_addr, &driver), 1000);
     assert_eq!(balance(&env, &token_addr, &contract_id), 0);
-    assert_eq!(client.get_escrow_record(&1u64).status, EscrowState::Released);
+    assert_eq!(client.get_escrow(&1u64).status, EscrowStatus::Released);
 }
 
 #[test]
@@ -263,7 +264,7 @@ fn test_refund_path_restores_sender_balance() {
 
     assert_eq!(balance(&env, &token_addr, &sender), 500);
     assert_eq!(balance(&env, &token_addr, &contract_id), 0);
-    assert_eq!(client.get_escrow_record(&2u64).status, EscrowState::Refunded);
+    assert_eq!(client.get_escrow(&2u64).status, EscrowStatus::Refunded);
 }
 
 #[test]
@@ -283,13 +284,13 @@ fn test_dispute_resolved_to_driver() {
     client.create_escrow(&sender, &driver, &3u64, &token_addr, &750);
     client.raise_dispute(&sender, &3u64);
 
-    assert_eq!(client.get_escrow_record(&3u64).status, EscrowState::Paused);
+    assert_eq!(client.get_escrow(&3u64).status, EscrowStatus::Disputed);
 
     client.resolve_dispute(&admin, &3u64, &DisputeFavour::Driver);
 
     assert_eq!(balance(&env, &token_addr, &driver), 750);
     assert_eq!(balance(&env, &token_addr, &sender), 0);
-    assert_eq!(client.get_escrow_record(&3u64).status, EscrowState::Released);
+    assert_eq!(client.get_escrow(&3u64).status, EscrowStatus::Released);
 }
 
 #[test]
@@ -312,7 +313,7 @@ fn test_dispute_resolved_to_sender() {
 
     assert_eq!(balance(&env, &token_addr, &sender), 300);
     assert_eq!(balance(&env, &token_addr, &driver), 0);
-    assert_eq!(client.get_escrow_record(&4u64).status, EscrowState::Refunded);
+    assert_eq!(client.get_escrow(&4u64).status, EscrowStatus::Refunded);
 }
 
 #[test]
@@ -635,23 +636,14 @@ fn test_lifecycle_events_emitted() {
     assert!(!env.events().all().is_empty());
 }
 
-fn setup_env() -> (Env, Address) {
-    let env = Env::default();
-    env.mock_all_auths();
-    let contract_id = env.register_contract(None, EscrowContract);
-    (env, contract_id)
-}
-
-fn setup_token(env: &Env, admin: &Address) -> Address {
-    env.register_stellar_asset_contract(admin.clone())
-}
-
-fn mint(env: &Env, token: &Address, to: &Address, amount: i128) {
-    let client = StellarAssetClient::new(env, token);
-    client.mint(to, &amount);
-}
-
-fn balance(env: &Env, token: &Address, user: &Address) -> i128 {
-    let client = TokenClient::new(env, token);
-    client.balance(user)
+#[test]
+fn test_get_escrow_not_found() {
+    let (env, contract_id) = setup_env();
+    let client = EscrowContractClient::new(&env, &contract_id);
+    
+    let result = client.try_get_escrow(&999u64);
+    match result {
+        Err(Ok(err)) => assert_eq!(err, EscrowError::DeliveryNotFound.into()),
+        _ => panic!("Expected DeliveryNotFound error"),
+    }
 }
