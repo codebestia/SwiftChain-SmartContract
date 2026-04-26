@@ -1,12 +1,52 @@
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, contracttype, contracterror, Env, Symbol, Address, panic_with_error};
-use shared_types::DeliveryStatus;
+use soroban_sdk::{contract, contractimpl, contracttype, contracterror, Env, Symbol, Address, panic_with_error, token};
+use shared_types::{DeliveryStatus, EscrowRecord, EscrowStatus, events};
+
+pub mod constants {
+    // Threshold to extend TTL (e.g. ~30 days in ledgers)
+    pub const ESCROW_TTL_THRESHOLD: u32 = 518400;
+    // Extend to (e.g. ~30 days in ledgers)
+    pub const ESCROW_TTL_EXTEND_TO: u32 = 518400;
+}
+
+fn require_admin(env: &Env, caller: &Address) {
+    let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+    if *caller != admin {
+        panic!("Unauthorized: caller is not the admin");
+    }
+}
+
+fn save_escrow(env: &Env, delivery_id: u64, record: &EscrowRecord) {
+    let key = DataKey::Escrow(delivery_id);
+    env.storage().persistent().set(&key, record);
+    env.storage().persistent().extend_ttl(
+        &key,
+        constants::ESCROW_TTL_THRESHOLD,
+        constants::ESCROW_TTL_EXTEND_TO,
+    );
+}
+
+fn load_escrow(env: &Env, delivery_id: u64) -> EscrowRecord {
+    let key = DataKey::Escrow(delivery_id);
+    let record: EscrowRecord = env
+        .storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or_else(|| panic_with_error!(env, EscrowError::DeliveryNotFound));
+    env.storage().persistent().extend_ttl(
+        &key,
+        constants::ESCROW_TTL_THRESHOLD,
+        constants::ESCROW_TTL_EXTEND_TO,
+    );
+    record
+}
 
 #[contracttype]
 #[derive(Clone)]
 enum DataKey {
     Admin,
+    PendingAdmin,
     PlatformFeeBps,
     Amount,
     Escrow(u64),
@@ -82,14 +122,14 @@ impl EscrowContract {
     pub fn get_admin(env: Env) -> Address {
         env.storage()
             .instance()
-            .get(&Symbol::new(&env, "admin"))
+            .get(&DataKey::Admin)
             .unwrap()
     }
 
     pub fn get_amount(env: Env) -> i128 {
         env.storage()
-            .persistent()
-            .get(&Symbol::new(&env, "amount"))
+            .instance()
+            .get(&DataKey::Amount)
             .unwrap()
     }
 
@@ -98,14 +138,14 @@ impl EscrowContract {
         let stored_admin: Address = env
             .storage()
             .instance()
-            .get(&Symbol::new(&env, "admin"))
+            .get(&DataKey::Admin)
             .unwrap();
         if stored_admin != current_admin {
             panic!("caller is not the admin");
         }
         env.storage()
             .instance()
-            .set(&Symbol::new(&env, "pending_admin"), &new_admin);
+            .set(&DataKey::PendingAdmin, &new_admin);
         env.storage().instance().extend_ttl(
             constants::ESCROW_TTL_THRESHOLD,
             constants::ESCROW_TTL_EXTEND_TO,
@@ -117,7 +157,7 @@ impl EscrowContract {
         let pending: Address = env
             .storage()
             .instance()
-            .get(&Symbol::new(&env, "pending_admin"))
+            .get(&DataKey::PendingAdmin)
             .unwrap();
         if pending != new_admin {
             panic!("caller is not the pending admin");
@@ -125,14 +165,14 @@ impl EscrowContract {
         let old_admin: Address = env
             .storage()
             .instance()
-            .get(&Symbol::new(&env, "admin"))
+            .get(&DataKey::Admin)
             .unwrap();
         env.storage()
             .instance()
-            .set(&Symbol::new(&env, "admin"), &new_admin);
+            .set(&DataKey::Admin, &new_admin);
         env.storage()
             .instance()
-            .remove(&Symbol::new(&env, "pending_admin"));
+            .remove(&DataKey::PendingAdmin);
         env.storage().instance().extend_ttl(
             constants::ESCROW_TTL_THRESHOLD,
             constants::ESCROW_TTL_EXTEND_TO,
