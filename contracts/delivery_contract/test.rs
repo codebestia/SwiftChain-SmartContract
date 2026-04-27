@@ -1,4 +1,3 @@
-#![cfg(test)]
 extern crate std;
 
 use super::*;
@@ -127,7 +126,7 @@ fn test_assignment_when_status_not_pending() {
 
 #[test]
 fn test_cancel_delivery_pending() {
-    let (env, client, admin, _, _) = setup_test();
+    let (env, client, _admin, _, _) = setup_test();
     let sender = Address::generate(&env);
     let recipient = Address::generate(&env);
     let metadata = DeliveryMetadata { recipient: recipient.clone() };
@@ -171,7 +170,7 @@ fn test_cancel_delivery_active() {
 #[test]
 #[should_panic(expected = "NotAuthorized")]
 fn test_cancel_delivery_unauthorized() {
-    let (env, client, admin, _, unauthorized) = setup_test();
+    let (env, client, _admin, _, unauthorized) = setup_test();
     let sender = Address::generate(&env);
     let recipient = Address::generate(&env);
     let metadata = DeliveryMetadata { recipient: recipient.clone() };
@@ -183,7 +182,7 @@ fn test_cancel_delivery_unauthorized() {
 #[test]
 #[should_panic(expected = "InvalidState")]
 fn test_cancel_delivery_invalid_state() {
-    let (env, client, admin, _, _) = setup_test();
+    let (env, client, _admin, _, _) = setup_test();
     let sender = Address::generate(&env);
     let recipient = Address::generate(&env);
     let metadata = DeliveryMetadata { recipient: recipient.clone() };
@@ -198,7 +197,7 @@ fn test_cancel_delivery_invalid_state() {
 #[test]
 #[should_panic(expected = "Escrow failure simulated")]
 fn test_cancel_delivery_escrow_failure() {
-    let (env, client, admin, _, _) = setup_test();
+    let (env, client, _admin, _, _) = setup_test();
     let sender = Address::generate(&env);
     let recipient = Address::generate(&env);
     let metadata = DeliveryMetadata { recipient: recipient.clone() };
@@ -289,7 +288,7 @@ fn test_init_state_and_event() {
 
     // Verify event
     let events = env.events().all();
-    if events.len() > 0 {
+    if !events.is_empty() {
         let last_event = events.last().unwrap();
         assert_eq!(last_event.0, contract_id);
     }

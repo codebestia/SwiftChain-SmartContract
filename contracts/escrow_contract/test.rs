@@ -1,5 +1,3 @@
-#![cfg(test)]
-
 use super::*;
 use soroban_sdk::{
     testutils::{Address as _, Events},
@@ -10,7 +8,7 @@ use soroban_sdk::{
 fn setup_env() -> (Env, Address) {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, EscrowContract);
+    let contract_id = env.register(EscrowContract, ());
     (env, contract_id)
 }
 
@@ -69,7 +67,7 @@ fn test_update_platform_fee_success() {
 
     // Verify event emission
     let events = env.events().all();
-    if events.len() > 0 {
+    if !events.is_empty() {
         let last_event = events.last().unwrap();
         assert_eq!(last_event.0, contract_id);
         
@@ -501,7 +499,7 @@ fn test_create_escrow_emits_escrow_funded_event() {
     
     // Verify event has two topics: escrow_funded and delivery_id
     assert_eq!(event.1.len(), 2);
-    assert!(events.len() > 0);
+    assert!(!events.is_empty());
 }
 
 #[test]
@@ -519,9 +517,9 @@ fn test_release_escrow_emits_escrow_released_event() {
     mint(&env, &token_addr, &sender, 1000);
     client.create_escrow(&sender, &driver, &101u64, &token_addr, &1000);
 
-    let event_count_before = env.events().all().len();
+    let _event_count_before = env.events().all().len();
     client.release_escrow(&admin, &101u64);
-    let event_count_after = env.events().all().len();
+    let _event_count_after = env.events().all().len();
 
     // Verify new event was emitted
     // std::println!("Before: {}, After: {}", event_count_before, event_count_after);
@@ -546,9 +544,9 @@ fn test_refund_escrow_emits_escrow_refunded_event() {
     mint(&env, &token_addr, &sender, 500);
     client.create_escrow(&sender, &driver, &102u64, &token_addr, &500);
 
-    let event_count_before = env.events().all().len();
+    let _event_count_before = env.events().all().len();
     client.refund_escrow(&admin, &102u64);
-    let event_count_after = env.events().all().len();
+    let _event_count_after = env.events().all().len();
 
     // Verify new event was emitted
     // assert!(event_count_after > event_count_before);
@@ -572,9 +570,9 @@ fn test_raise_dispute_emits_delivery_disputed_event() {
     mint(&env, &token_addr, &sender, 750);
     client.create_escrow(&sender, &driver, &103u64, &token_addr, &750);
 
-    let event_count_before = env.events().all().len();
+    let _event_count_before = env.events().all().len();
     client.raise_dispute(&sender, &103u64);
-    let event_count_after = env.events().all().len();
+    let _event_count_after = env.events().all().len();
 
     // Verify new event was emitted
     // assert!(event_count_after > event_count_before);
