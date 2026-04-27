@@ -3,6 +3,7 @@
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, panic_with_error, Address, Env, Symbol,
 };
+use shared_types::DriverProfile;
 
 pub type DeliveryId = u64;
 
@@ -43,6 +44,7 @@ pub enum DataKey {
     DeliveryCounter,
     Admin,
     EscrowContract,
+    DriverProfile(Address),
 }
 
 #[contracterror]
@@ -283,6 +285,26 @@ impl DeliveryContract {
         env.storage().persistent().set(&key, &delivery);
         env.storage().persistent().extend_ttl(&key, 518400, 518400);
 
+        if let Some(driver_addr) = &delivery.driver {
+            let driver_key = DataKey::DriverProfile(driver_addr.clone());
+            let mut profile: DriverProfile = env
+                .storage()
+                .persistent()
+                .get(&driver_key)
+                .unwrap_or_else(|| DriverProfile {
+                    address: driver_addr.clone(),
+                    deliveries_completed: 0,
+                    reputation_score: 0,
+                    registered_at: env.ledger().timestamp(),
+                });
+
+            profile.deliveries_completed += 1;
+            profile.reputation_score += 1;
+
+            env.storage().persistent().set(&driver_key, &profile);
+            env.storage().persistent().extend_ttl(&driver_key, 518400, 518400);
+        }
+
         env.events().publish(
             (soroban_sdk::Symbol::new(&env, "delivery_confirmed"),),
             (delivery_id, recipient),
@@ -344,6 +366,19 @@ impl DeliveryContract {
         } else {
             false
         }
+    }
+
+    pub fn get_driver_profile(env: Env, driver: Address) -> DriverProfile {
+        let driver_key = DataKey::DriverProfile(driver.clone());
+        env.storage()
+            .persistent()
+            .get(&driver_key)
+            .unwrap_or_else(|| DriverProfile {
+                address: driver,
+                deliveries_completed: 0,
+                reputation_score: 0,
+                registered_at: env.ledger().timestamp(),
+            })
     }
 }
 

@@ -62,3 +62,13 @@ pub struct EscrowRecord {
     pub amount: i128,
     pub status: EscrowStatus,
 }
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DriverProfile {
+    pub address: Address,
+    pub deliveries_completed: u32,
+    pub reputation_score: u32,
+    pub registered_at: u64,
+}
+
