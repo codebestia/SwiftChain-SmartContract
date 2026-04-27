@@ -1,6 +1,6 @@
 #![no_std]
 
-use soroban_sdk::{contracttype, String};
+use soroban_sdk::{contracttype, Address, String};
 
 // Event topic constants for on-chain event tracking
 pub mod events {
@@ -42,4 +42,23 @@ pub struct DeliveryDetails {
     pub id: u64,
     pub driver: String,
     pub status: DeliveryStatus,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EscrowStatus {
+    Pending,
+    Released,
+    Refunded,
+    Disputed,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EscrowRecord {
+    pub sender: Address,
+    pub driver: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub status: EscrowStatus,
 }

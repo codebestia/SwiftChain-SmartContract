@@ -1,14 +1,50 @@
 #![no_std]
 
-use shared_types::{events, DeliveryStatus};
+use shared_types::{events, DeliveryStatus, EscrowRecord, EscrowStatus};
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, panic_with_error, token, Address, Env,
     Symbol,
 };
 
-mod constants {
+pub mod constants {
     pub const ESCROW_TTL_THRESHOLD: u32 = 518400;
     pub const ESCROW_TTL_EXTEND_TO: u32 = 518400;
+}
+
+fn require_admin(env: &Env, caller: &Address) {
+    let stored_admin: Address = env
+        .storage()
+        .instance()
+        .get(&DataKey::Admin)
+        .expect("Not initialized");
+    if *caller != stored_admin {
+        panic!("Unauthorized");
+    }
+}
+
+fn save_escrow(env: &Env, delivery_id: u64, record: &EscrowRecord) {
+    let key = DataKey::Escrow(delivery_id);
+    env.storage().persistent().set(&key, record);
+    env.storage().persistent().extend_ttl(
+        &key,
+        constants::ESCROW_TTL_THRESHOLD,
+        constants::ESCROW_TTL_EXTEND_TO,
+    );
+}
+
+fn load_escrow(env: &Env, delivery_id: u64) -> EscrowRecord {
+    let key = DataKey::Escrow(delivery_id);
+    let record: EscrowRecord = env
+        .storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or_else(|| panic_with_error!(env, EscrowError::DeliveryNotFound));
+    env.storage().persistent().extend_ttl(
+        &key,
+        constants::ESCROW_TTL_THRESHOLD,
+        constants::ESCROW_TTL_EXTEND_TO,
+    );
+    record
 }
 
 #[contracttype]
@@ -32,56 +68,9 @@ pub enum EscrowError {
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum EscrowStatus {
-    Pending,
-    Released,
-    Refunded,
-    Disputed,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct EscrowRecord {
-    pub sender: Address,
-    pub driver: Address,
-    pub token: Address,
-    pub amount: i128,
-    pub status: EscrowStatus,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FeeUpdated {
     pub old_fee: u32,
     pub new_fee: u32,
-}
-
-fn save_escrow(env: &Env, delivery_id: u64, record: &EscrowRecord) {
-    let key = DataKey::Escrow(delivery_id);
-    env.storage().persistent().set(&key, record);
-    env.storage().persistent().extend_ttl(
-        &key,
-        constants::ESCROW_TTL_THRESHOLD,
-        constants::ESCROW_TTL_EXTEND_TO,
-    );
-}
-
-fn load_escrow(env: &Env, delivery_id: u64) -> EscrowRecord {
-    env.storage()
-        .persistent()
-        .get(&DataKey::Escrow(delivery_id))
-        .unwrap_or_else(|| panic_with_error!(env, EscrowError::DeliveryNotFound))
-}
-
-fn require_admin(env: &Env, caller: &Address) {
-    let stored_admin: Address = env
-        .storage()
-        .instance()
-        .get(&DataKey::Admin)
-        .expect("Not initialized");
-    if *caller != stored_admin {
-        panic!("Unauthorized");
-    }
 }
 
 #[contract]

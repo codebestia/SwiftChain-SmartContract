@@ -1,13 +1,9 @@
-#![cfg(test)]
-
 use super::*;
 use soroban_sdk::{
     testutils::{Address as _, Events},
     token::{Client as TokenClient, StellarAssetClient},
-    Address, Env,
+    Address, Env, IntoVal, Symbol,
 };
-
-// ── Test helpers ─────────────────────────────────────────────────────────────
 
 fn setup_env() -> (Env, Address) {
     let env = Env::default();
@@ -28,8 +24,6 @@ fn mint(env: &Env, token: &Address, to: &Address, amount: i128) {
 fn balance(env: &Env, token: &Address, of: &Address) -> i128 {
     TokenClient::new(env, token).balance(of)
 }
-
-// ── Initialization & admin tests ─────────────────────────────────────────────
 
 #[test]
 fn test_init_and_get_status() {
@@ -57,8 +51,6 @@ fn test_update_platform_fee_success() {
 
     client.update_platform_fee(&admin, &500);
 
-    assert_eq!(client.get_platform_fee(), 500);
-
     let events = env.events().all();
     let last_event = events.last().unwrap();
 
@@ -77,6 +69,8 @@ fn test_update_platform_fee_success() {
             new_fee: 500
         }
     );
+
+    assert_eq!(client.get_platform_fee(), 500);
 }
 
 #[test]
@@ -566,7 +560,7 @@ fn test_create_escrow_emits_escrow_funded_event() {
     let event = events.last().unwrap();
 
     assert_eq!(event.1.len(), 2);
-    assert!(events.len() > 0);
+    assert!(!events.is_empty());
 }
 
 #[test]

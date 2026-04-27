@@ -1,4 +1,3 @@
-#![cfg(test)]
 extern crate std;
 
 use super::*;
@@ -311,14 +310,6 @@ fn test_init_state_and_event() {
 
     client.init(&admin, &escrow);
 
-    let counter: u64 = env.as_contract(&contract_id, || {
-        env.storage()
-            .persistent()
-            .get(&DataKey::DeliveryCounter)
-            .unwrap()
-    });
-    assert_eq!(counter, 0);
-
     let events = env.events().all();
     let last_event = events.last().unwrap();
 
@@ -329,6 +320,14 @@ fn test_init_state_and_event() {
 
     let data: (Address, Address) = <(Address, Address)>::try_from_val(&env, &last_event.2).unwrap();
     assert_eq!(data, (admin, escrow));
+
+    let counter: u64 = env.as_contract(&contract_id, || {
+        env.storage()
+            .persistent()
+            .get(&DataKey::DeliveryCounter)
+            .unwrap()
+    });
+    assert_eq!(counter, 0);
 }
 
 // ── Issue #25: State machine validate_transition tests ───────────────────────
