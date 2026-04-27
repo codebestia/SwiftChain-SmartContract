@@ -1,6 +1,6 @@
 #![no_std]
 
-use soroban_sdk::{contracttype, String, Address};
+use soroban_sdk::{contracttype, Address, String};
 
 // Event topic constants for on-chain event tracking
 pub mod events {
