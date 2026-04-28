@@ -66,3 +66,13 @@ pub struct EscrowRecord {
     pub disputed_by: Option<Address>,
     pub disputed_at: Option<u64>,
 }
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DriverProfile {
+    pub address: Address,
+    pub deliveries_completed: u32,
+    pub reputation_score: u32,
+    pub registered_at: u64,
+}
+
