@@ -3,7 +3,7 @@ use shared_types::SwiftChainError;
 use soroban_sdk::{
     testutils::Address as _,
     token::{Client as TokenClient, StellarAssetClient},
-    Address, Env,
+    Address, Env, IntoVal,
 };
 
 fn setup_env() -> (Env, Address) {

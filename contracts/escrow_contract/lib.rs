@@ -355,7 +355,7 @@ impl EscrowContract {
             &record.sender,
             &record.amount,
         );
-        record.status = EscrowStatus::Refunded;
+        record.status = EscrowState::Refunded;
         save_escrow(&env, delivery_id, &record);
         env.events().publish(
             (events::escrow_refunded(&env), delivery_id),
@@ -429,10 +429,12 @@ impl EscrowContract {
             );
             record.status = EscrowStatus::Refunded;
         }
+
         save_escrow(&env, delivery_id, &record);
+        
         env.events().publish(
             (events::dispute_resolved(&env), delivery_id),
-            (release_to_driver, caller),
+            (favour, admin),
         );
     }
 
@@ -445,6 +447,30 @@ impl EscrowContract {
             panic_with_error!(&env, SwiftChainError::DeliveryNotFound);
         }
         load_escrow(&env, delivery_id)
+    }
+}
+
+fn load_escrow(env: &Env, delivery_id: u64) -> EscrowRecord {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Escrow(delivery_id))
+        .expect("Escrow not found")
+}
+
+fn save_escrow(env: &Env, delivery_id: u64, record: &EscrowRecord) {
+    let key = DataKey::Escrow(delivery_id);
+    env.storage().persistent().set(&key, record);
+    env.storage().persistent().extend_ttl(
+        &key,
+        constants::ESCROW_TTL_THRESHOLD,
+        constants::ESCROW_TTL_EXTEND_TO,
+    );
+}
+
+fn require_admin(env: &Env, caller: &Address) {
+    let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+    if *caller != admin {
+        panic!("Unauthorized");
     }
 }
 
